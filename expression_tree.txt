@@ -1,0 +1,383 @@
+# Student ID: 52092974
+# Assessment 3
+
+#---------------------------- readme ------------------------------------------
+# This program parses a valid expression into a binary tree and visualises the
+# generated tree. Additionally program gives the result of the expression and can
+# save the binary tree into a file. To run this program I would suggest copying
+# the content of this file and pasting it into IDLE or another IDE. Then run like
+# every python file. Another method is to save the file to your system, change
+# the extension from txt to py, and then run it with: python3 expression_tree.py. 
+# At the beginning of the file you can find classes and functions which I used to
+# create my main program. Main program can be found on the bottom of the file. 
+
+
+import pickle
+import unittest
+
+###################################################################################
+################################# classes section #################################
+###################################################################################
+
+#---------------------------- class LinkedBinaryTree -------------------------------
+# Creating class LinkedBinaryTree I re-used and modified code from the book
+# Goodrich, Michael T., et al. Data Structures and Algorithms in Python, Wiley, 2013
+# Method visualise_tree() is my own method.
+
+class LinkedBinaryTree:
+    """Linked representation of a binary tree structure."""
+    
+    #-------------------------- nested _Node class --------------------------
+    class _Node:
+        """Lightweight, nonpublic class for storing a node."""
+        __slots__ = '_element', '_parent', '_left', '_right'
+    
+        def __init__(self, element, parent=None, left=None, right=None):
+            self._element = element
+            self._parent = parent
+            self._left = left
+            self._right = right
+            
+  #-------------------------- nested Position class --------------------------
+    class Position:
+        """An abstraction representing the location of a single element."""
+
+        def __init__(self, container, node):
+            """Constructor should not be invoked by user."""
+            self._container = container
+            self._node = node
+      
+        def element(self):
+            """Return the element stored at this Position."""
+            return self._node._element
+
+        def __eq__(self, other):
+            """Return True if other is a Position representing the same location."""
+            return type(other) is type(self) and other._node is self._node
+        
+  #------------------------------- utility methods -------------------------------
+    def _validate(self, p):
+        """Return associated node, if position is valid."""
+        if not isinstance(p, self.Position):
+            raise TypeError('p must be proper Position type')
+        if p._container is not self:
+          raise ValueError('p does not belong to this container')
+        if p._node._parent is p._node:      # convention for deprecated nodes
+          raise ValueError('p is no longer valid')
+        return p._node
+
+    def _make_position(self, node):
+        """Return Position instance for given node (or None if no node)."""
+        return self.Position(self, node) if node is not None else None
+
+  #-------------------------- binary tree constructor --------------------------
+    def __init__(self):
+        """Create an initially empty binary tree."""
+        self._root = None
+        self._size = 0
+        
+  #------------------------------ accessors -----------------------------------
+    def __len__(self):
+        """Return the total number of elements in the tree."""
+        return self._size
+  
+    def root(self):
+        """Return the root Position of the tree (or None if tree is empty)."""
+        return self._make_position(self._root)
+
+    def parent(self, p):
+        """Return the Position of p's parent (or None if p is root)."""
+        node = self._validate(p)
+        return self._make_position(node._parent)
+
+    def left(self, p):
+        """Return the Position of p's left child (or None if no left child)."""
+        node = self._validate(p)
+        return self._make_position(node._left)
+
+    def depth(self, p):
+        """Return the number of levels separating Position p from the root."""
+        if self.is_root(p):
+            return 0
+        else:
+            return 1 + self.depth(self.parent(p))
+
+    def right(self, p):
+        """Return the Position of p's right child (or None if no right child)."""
+        node = self._validate(p)
+        return self._make_position(node._right)
+
+    def num_children(self, p):
+        """Return the number of children of Position p."""
+        node = self._validate(p)
+        count = 0
+        if node._left is not None:     # left child exists
+            count += 1
+        if node._right is not None:    # right child exists
+            count += 1
+        return count
+
+    def is_root(self, p):
+        """Return True if Position p represents the root of the tree."""
+        return self.root() == p
+
+    def is_leaf(self, p):
+        """Return True if Position p does not have any children."""
+        return self.num_children(p) == 0
+
+    def is_empty(self):
+        """Return True if the tree is empty."""
+        return len(self) == 0
+
+    def _add_root(self, e):
+        """Place element e at the root of an empty tree and return new Position.
+        Raise ValueError if tree nonempty.
+        """
+        if self._root is not None:
+            raise ValueError('Root exists')
+        self._size = 1
+        self._root = self._Node(e)
+        return self._make_position(self._root)
+
+    def inorder(self):
+        """Generate an inorder iteration of positions in the tree."""
+        if not self.is_empty():
+            for p in self._subtree_inorder(self.root()):
+                yield p
+
+    def _subtree_inorder(self, p):
+        """Generate an inorder iteration of positions in subtree rooted at p."""
+        if self.left(p) is not None:          # if left child exists, traverse its subtree
+            for other in self._subtree_inorder(self.left(p)):
+                yield other
+        yield p                               # visit p between its subtrees
+        if self.right(p) is not None:         # if right child exists, traverse its subtree
+            for other in self._subtree_inorder(self.right(p)):
+                yield other
+
+    def positions(self):
+        """Generate an iteration of the tree's positions."""
+        return self.inorder()                 # make inorder the default
+
+    def _attach(self, p, t1, t2):
+        """Attach trees t1 and t2, respectively, as the left and right subtrees
+        of the external Position p. As a side effect, set t1 and t2 to empty.
+        Raise TypeError if trees t1 and t2 do not match type of this tree.
+        Raise ValueError if Position p is invalid or not external.
+        """
+        node = self._validate(p)
+        if not self.is_leaf(p):
+          raise ValueError('position must be leaf')
+        #if not type(self) is type(t1) is type(t2):    # all 3 trees must be same type
+          #raise TypeError('Tree types must match')
+        self._size += len(t1) + len(t2)
+        if not t1.is_empty():         # attached t1 as left subtree of node
+          t1._root._parent = node
+          node._left = t1._root
+          t1._root = None             # set t1 instance to empty
+          t1._size = 0
+        if not t2.is_empty():         # attached t2 as right subtree of node
+          t2._root._parent = node
+          node._right = t2._root
+          t2._root = None             # set t2 instance to empty
+          t2._size = 0
+
+    def visualise_tree(self):
+        """If tree is not empty visualise (as output in the terminal)
+        all nodes of a tree.
+        """
+        if not self.is_empty():
+            to_print = []
+            for p in self.positions():
+                to_add = (int(self.depth(p)) * "     " ,p._node._element)
+                to_print.append(to_add)
+            to_print.reverse()
+            for position in to_print:
+                print(*position)
+
+                
+#------------------------------- class ArrayStack ---------------------------------
+# Creating class ArrayStack I re-used and modified code from the book
+# Goodrich, Michael T., et al. Data Structures and Algorithms in Python, Wiley, 2013
+            
+class ArrayStack:
+  """LIFO Stack implementation using a Python list as underlying storage."""
+
+  def __init__(self):
+    """Create an empty stack."""
+    self._data = []                       # nonpublic list instance
+
+  def __len__(self):
+    """Return the number of elements in the stack."""
+    return len(self._data)
+
+  def is_empty(self):
+    """Return True if the stack is empty."""
+    return len(self._data) == 0
+
+  def push(self, e):
+    """Add element e to the top of the stack."""
+    self._data.append(e)                  # new item stored at end of list
+
+  def pop(self):
+    """Remove and return the element from the top of the stack (i.e., LIFO).
+
+    Raise Empty exception if the stack is empty.
+    """
+    if self.is_empty():
+      raise Empty('Stack is empty')
+    return self._data.pop()               # remove last item from list
+
+
+#-------------------------------- class MyTest ---------------------------------
+
+class MyTest(unittest.TestCase):
+    """Test if functions infix_to_postfix, calculate, check_validity
+    work properly.
+    """
+    def test1(self):
+        self.assertEqual(infix_to_postfix("(((2*(3+2))+5)/2)"),"232+*5+2/", "Test\
+failed. Function infix_to_postfix does not work properly.")
+
+    def test2(self):
+        self.assertEqual(calculate("88*9-"),55,"Test failed. Function calculate \
+does not work properly.")
+
+    def test3(self):
+        self.assertNotEqual(check_validity("((2+3)*(4*5)"),"valid expression", "Test\
+failed. Funtion check_validity does not work properly.")
+
+
+###################################################################################
+############################### functions section #################################
+###################################################################################
+
+def check_validity(expression):
+    """Check if expression is valid or not. Return if expression is valid.
+    If expression is not valid, also gives a reason why.
+    """
+    left = expression.count("(")
+    right = expression.count(")")
+    operands = 0
+    operators = 0
+    possible_operators = ["+", "-", "/", "*"]
+    for char in expression:
+        if char.isdigit():
+            operands += 1
+        if char in possible_operators:
+            operators += 1
+    if left == right and left < operators:
+        return "Not a valid expression, wrong number of operands"
+    elif left != right or operators > left:
+        return "Not a valid expression, brackets mismatched"
+    elif left == right == operands:
+        return "Not a valid expression, wrong number of operands"
+    elif operators + 1 < operands:
+        return "Not a valid expression, operator missing"
+    else:
+        return "valid expression"
+
+    
+def infix_to_postfix(infix_expression):
+    """ Convert infix expression to postfix expression.
+    Return postfix expression.
+    """
+    postfix = []
+    waiting = ArrayStack()
+    operators = ["*", "/", "+", "-", "("]
+    infix = list(infix_expression)
+    for char in infix:
+        if char in "0123456789":
+            postfix.append(char)
+        elif char in operators:
+            waiting.push(char)
+        elif char == ")":
+            while not waiting.is_empty():
+                to_add = waiting.pop()
+                if to_add != "(":
+                    postfix.append(to_add)
+    return "".join(postfix)
+
+
+def calculate(expression):
+    """Calculate the result of the expression.
+    Return the result.
+    """
+    r = ArrayStack()
+    for char in expression:
+        if char in "0123456789":
+            r.push(char)
+        else:
+          num_ = int(r.pop())
+          num_2 = int(r.pop())
+          if char == "*":
+              result = num_2 * num_
+          elif char == "/":
+              result = num_2 / num_
+          elif char == "+":
+              result = num_2 + num_
+          elif char == "-":
+              result = num_2 - num_
+          r.push(result)
+    return r.pop()
+
+
+def convert(postfix_exp):
+    """Convert postfix expression into binary tree.
+    Return generated binary tree.
+    """
+    s = ArrayStack()
+    operators = ["+", "-", "/", "*"]
+    for char in postfix_exp:
+        if char in "0123456789":
+            tree = LinkedBinaryTree()
+            tree._add_root(char)
+            s.push(tree)
+        elif char in operators:
+            first = s.pop()
+            second = s.pop()
+            new_tree = LinkedBinaryTree()
+            new_root = new_tree._add_root(char)
+            new_tree._attach(new_root, first, second)
+            s.push(new_tree)
+    return s.pop()
+
+
+###################################################################################
+################################## main program ###################################
+###################################################################################
+
+decision = input("Hello. If you want to create a new tree enter '1'. \
+If you want to reload tree from a file enter '2':\n")
+if decision == "1":
+    user_expression = input("Enter expression to convert into a binary tree:\n")
+    validity = check_validity(user_expression) 
+    if validity == "valid expression":
+        user_postfix = infix_to_postfix(user_expression)
+        result = calculate(user_postfix)
+        user_tree = convert(user_postfix)
+        print("You can 'read' visualisation of your tree if \
+you image it tipped 90 degrees to the right.")
+        user_tree.visualise_tree()
+        print(f"The result of your expression is {result}.")
+        to_save = input("If you want to save your binary tree into file enter '1'.\
+If you want to exit program enter your favourite number:\n")
+        if to_save == "1":
+            name = input("Enter the name of a file:\n")
+            with open(f"{name}", "wb") as save_file:
+                pickle.dump(user_tree, save_file)
+    else:
+        print(validity)
+        print("Thank you for using my program.")
+elif decision == "2":
+    name = input("Enter the name of a file:\n")
+    try: 
+        with open(f"{name}", "rb") as reload_file:
+            reloaded_tree = pickle.load(reload_file)
+            reloaded_tree.visualise_tree()
+    except FileNotFoundError:
+        print("File not found.")
+else:
+    print("Wrong number entered")
+
+unittest.main()
